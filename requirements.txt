@@ -1,0 +1,11 @@
+# Idealo Price Tracker – Python dependencies
+
+# HTTP client
+requests>=2.31.0
+
+# HTML parsing
+beautifulsoup4>=4.12.0
+lxml>=5.0.0          # faster BS4 backend (optional but recommended)
+
+# Desktop notifications (optional – falls gracefully if missing)
+plyer>=2.1.0
