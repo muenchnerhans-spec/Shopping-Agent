@@ -83,27 +83,32 @@ class StorageAgent:
         query: str,
         target_price: Optional[float] = None,
         alert_on_drop_pct: Optional[float] = None,
+        shops: Optional[list] = None,
     ) -> dict:
         """
         Add a new item to the watchlist.
 
         Args:
             name:              Human-readable label.
-            query:             Search string used on idealo.
+            query:             Search string used on the selected shops.
             target_price:      Optional absolute price threshold for alerts.
             alert_on_drop_pct: Alert when price drops by this % from the reference price.
+            shops:             List of shop keys to search (None → all shops).
 
         Returns:
             The newly created item dict.
         """
+        from config import DEFAULT_SHOPS
         item_id = self._generate_id(name)
         item = {
             "id": item_id,
             "name": name,
             "query": query,
+            "shops": shops if shops is not None else list(DEFAULT_SHOPS),
             "target_price": target_price,
             "alert_on_drop_pct": alert_on_drop_pct,
             "last_price": None,
+            "last_shop": None,
             "last_checked": None,
             "added_at": datetime.now().isoformat(),
         }
@@ -117,7 +122,7 @@ class StorageAgent:
         if item_id not in self._watchlist:
             logger.warning("update_item: unknown id %s", item_id)
             return False
-        allowed = {"name", "query", "target_price", "alert_on_drop_pct"}
+        allowed = {"name", "query", "shops", "target_price", "alert_on_drop_pct"}
         for key, value in kwargs.items():
             if key in allowed:
                 self._watchlist[item_id][key] = value
@@ -133,10 +138,11 @@ class StorageAgent:
         logger.info("Removed item %s.", item_id)
         return True
 
-    def set_last_price(self, item_id: str, price: float) -> None:
+    def set_last_price(self, item_id: str, price: float, shop: str = "") -> None:
         """Update the cached last-seen price on an item."""
         if item_id in self._watchlist:
             self._watchlist[item_id]["last_price"] = price
+            self._watchlist[item_id]["last_shop"] = shop
             self._watchlist[item_id]["last_checked"] = datetime.now().isoformat()
             self._save_watchlist()
 
@@ -144,7 +150,7 @@ class StorageAgent:
     # Price history API
     # ------------------------------------------------------------------
 
-    def append_price(self, item_id: str, price: float, url: str = "") -> dict:
+    def append_price(self, item_id: str, price: float, url: str = "", shop: str = "") -> dict:
         """
         Append a price snapshot for an item.
 
@@ -154,12 +160,13 @@ class StorageAgent:
             "timestamp": datetime.now().isoformat(),
             "price": price,
             "url": url,
+            "shop": shop,
         }
         if item_id not in self._price_history:
             self._price_history[item_id] = []
         self._price_history[item_id].append(snapshot)
         self._save_history()
-        self.set_last_price(item_id, price)
+        self.set_last_price(item_id, price, shop)
         return snapshot
 
     def get_history(self, item_id: str) -> list[dict]:

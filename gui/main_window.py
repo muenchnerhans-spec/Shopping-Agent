@@ -1,5 +1,5 @@
 """
-MainWindow – tkinter GUI for the Idealo Price Tracker.
+MainWindow – tkinter GUI for the Shopping Agent Price Tracker.
 
 Tabs:
   1. Watchlist  – Add / remove / edit tracked items; see current prices.
@@ -15,6 +15,8 @@ import tkinter as tk
 import webbrowser
 from tkinter import messagebox, ttk
 from typing import Optional
+
+from config import SHOP_DISPLAY_NAMES, DEFAULT_SHOPS
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +35,9 @@ class MainWindow:
         self._notifier = notifier
 
         self._root = tk.Tk()
-        self._root.title("Idealo Price Tracker")
-        self._root.geometry("900x600")
-        self._root.minsize(700, 450)
+        self._root.title("Shopping Agent – Preisvergleich")
+        self._root.geometry("1000x640")
+        self._root.minsize(800, 480)
 
         self._build_ui()
         self._register_callbacks()
@@ -125,17 +127,33 @@ class MainWindow:
             row=1, column=4, padx=8, pady=3
         )
 
+        # Shop selection checkboxes
+        shop_frame = ttk.LabelFrame(form, text="Shops durchsuchen")
+        shop_frame.grid(row=2, column=0, columnspan=5, padx=4, pady=4, sticky=tk.W)
+
+        self._shop_vars: dict[str, tk.BooleanVar] = {}
+        col = 0
+        for shop_key, display_name in SHOP_DISPLAY_NAMES.items():
+            var = tk.BooleanVar(value=(shop_key in DEFAULT_SHOPS))
+            self._shop_vars[shop_key] = var
+            ttk.Checkbutton(shop_frame, text=display_name, variable=var).grid(
+                row=0, column=col, padx=6, pady=2, sticky=tk.W
+            )
+            col += 1
+
         # Table
-        cols = ("name", "query", "last_price", "target_price", "last_checked")
+        cols = ("name", "query", "shops", "last_price", "target_price", "last_checked")
         self._tree = ttk.Treeview(frame, columns=cols, show="headings", selectmode="browse")
         self._tree.heading("name", text="Name")
         self._tree.heading("query", text="Suchbegriff")
+        self._tree.heading("shops", text="Shops")
         self._tree.heading("last_price", text="Letzter Preis")
         self._tree.heading("target_price", text="Zielpreis")
         self._tree.heading("last_checked", text="Zuletzt geprüft")
-        self._tree.column("name", width=160)
-        self._tree.column("query", width=200)
-        self._tree.column("last_price", width=110, anchor=tk.CENTER)
+        self._tree.column("name", width=140)
+        self._tree.column("query", width=180)
+        self._tree.column("shops", width=180)
+        self._tree.column("last_price", width=120, anchor=tk.CENTER)
         self._tree.column("target_price", width=100, anchor=tk.CENTER)
         self._tree.column("last_checked", width=160, anchor=tk.CENTER)
 
@@ -168,16 +186,18 @@ class MainWindow:
         self._combo_history_item.pack(side=tk.LEFT, padx=6)
         ttk.Button(top, text="Laden", command=self._on_load_history).pack(side=tk.LEFT)
 
-        cols = ("timestamp", "price", "url")
+        cols = ("timestamp", "price", "shop", "url")
         self._tree_history = ttk.Treeview(
             frame, columns=cols, show="headings", selectmode="browse"
         )
         self._tree_history.heading("timestamp", text="Zeitpunkt")
         self._tree_history.heading("price", text="Preis (€)")
+        self._tree_history.heading("shop", text="Shop")
         self._tree_history.heading("url", text="URL")
         self._tree_history.column("timestamp", width=180)
         self._tree_history.column("price", width=100, anchor=tk.CENTER)
-        self._tree_history.column("url", width=480)
+        self._tree_history.column("shop", width=100, anchor=tk.CENTER)
+        self._tree_history.column("url", width=400)
 
         self._tree_history.bind("<Double-1>", self._on_history_double_click)
 
@@ -284,7 +304,12 @@ class MainWindow:
             messagebox.showerror("Ungültige Eingabe", "Preisfall-Prozent muss eine Zahl sein.")
             return
 
-        self._storage.add_item(name, query, target_price, drop_pct)
+        selected_shops = [k for k, v in self._shop_vars.items() if v.get()]
+        if not selected_shops:
+            messagebox.showwarning("Kein Shop gewählt", "Bitte mindestens einen Shop auswählen.")
+            return
+
+        self._storage.add_item(name, query, target_price, drop_pct, selected_shops)
         self._entry_name.delete(0, tk.END)
         self._entry_query.delete(0, tk.END)
         self._entry_target.delete(0, tk.END)
@@ -329,12 +354,15 @@ class MainWindow:
         history = self._storage.get_history(item_id)
         self._tree_history.delete(*self._tree_history.get_children())
         for entry in reversed(history):
+            shop_key = entry.get("shop", "")
+            shop_label = SHOP_DISPLAY_NAMES.get(shop_key, shop_key) if shop_key else "–"
             self._tree_history.insert(
                 "",
                 tk.END,
                 values=(
                     entry.get("timestamp", "")[:16],
                     f"{entry['price']:.2f}",
+                    shop_label,
                     entry.get("url", ""),
                 ),
             )
@@ -343,7 +371,7 @@ class MainWindow:
         sel = self._tree_history.selection()
         if not sel:
             return
-        url = self._tree_history.item(sel[0], "values")[2]
+        url = self._tree_history.item(sel[0], "values")[3]  # url is now index 3
         if url and url.startswith("http"):
             webbrowser.open(url)
 
@@ -405,13 +433,30 @@ class MainWindow:
         self._tree.delete(*self._tree.get_children())
         names = []
         for item in items:
-            price_str = f"{item['last_price']:.2f} €" if item.get("last_price") is not None else "–"
+            # Build shop display string
+            item_shops = item.get("shops") or []
+            shop_labels = [SHOP_DISPLAY_NAMES.get(s, s) for s in item_shops]
+            shops_str = ", ".join(shop_labels) if shop_labels else "–"
+
+            # Price + winning shop
+            last_price = item.get("last_price")
+            last_shop = item.get("last_shop", "")
+            if last_price is not None:
+                shop_suffix = (
+                    f" ({SHOP_DISPLAY_NAMES.get(last_shop, last_shop)})"
+                    if last_shop
+                    else ""
+                )
+                price_str = f"{last_price:.2f} €{shop_suffix}"
+            else:
+                price_str = "–"
+
             target_str = f"{item['target_price']:.2f} €" if item.get("target_price") is not None else "–"
             checked_str = (item.get("last_checked") or "–")[:16]
             self._tree.insert(
                 "",
                 tk.END,
-                values=(item["name"], item["query"], price_str, target_str, checked_str),
+                values=(item["name"], item["query"], shops_str, price_str, target_str, checked_str),
                 tags=(item["id"],),
             )
             names.append(item["name"])

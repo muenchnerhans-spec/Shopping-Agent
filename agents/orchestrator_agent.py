@@ -164,7 +164,7 @@ class OrchestratorAgent:
         for result in results:
             if result.ok():
                 status.items_ok += 1
-                self._storage.append_price(result.item_id, result.price, result.url)
+                self._storage.append_price(result.item_id, result.price, result.url, result.shop)
                 item = self._storage.get_item(result.item_id)
                 if item:
                     alert = self._notifier.evaluate(item, result.price, result.url)

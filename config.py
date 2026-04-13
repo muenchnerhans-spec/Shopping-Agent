@@ -1,13 +1,38 @@
 """
-Central configuration for the Idealo Price Tracker.
+Central configuration for the Shopping Agent Price Tracker.
 """
 
 # Scheduling
 SCRAPE_INTERVAL_MINUTES = 60  # How often to check prices
 
-# Idealo base URL
+# Idealo base URL (kept for backwards-compat imports)
 IDEALO_BASE_URL = "https://www.idealo.de/preisvergleich/MainSearchProductCategory.html"
 IDEALO_SEARCH_URL = "https://www.idealo.de/preisvergleich/MainSearchProductCategory.html?q={query}"
+
+# Search URLs per shop – use {query} as placeholder for quote_plus(query)
+SHOP_SEARCH_URLS: dict[str, str] = {
+    "idealo":     "https://www.idealo.de/preisvergleich/MainSearchProductCategory.html?q={query}",
+    "amazon":     "https://www.amazon.de/s?k={query}&language=de_DE",
+    "mediamarkt": "https://www.mediamarkt.de/de/search.html?query={query}",
+    "saturn":     "https://www.saturn.de/de/search.html?query={query}",
+    "galaxus":    "https://www.galaxus.de/search?q={query}",
+    "alza":       "https://www.alza.de/search.htm?exps={query}",
+    "otto":       "https://www.otto.de/suche/{query}/",
+}
+
+# Human-readable display names for each shop key
+SHOP_DISPLAY_NAMES: dict[str, str] = {
+    "idealo":     "Idealo",
+    "amazon":     "Amazon",
+    "mediamarkt": "MediaMarkt",
+    "saturn":     "Saturn",
+    "galaxus":    "Galaxus",
+    "alza":       "Alza",
+    "otto":       "Otto",
+}
+
+# Shops enabled by default when a new item is added
+DEFAULT_SHOPS: list[str] = list(SHOP_SEARCH_URLS.keys())
 
 # HTTP request settings
 REQUEST_HEADERS = {
