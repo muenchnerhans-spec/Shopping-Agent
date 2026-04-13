@@ -16,7 +16,7 @@ to their parser function.
 import json
 import logging
 import re
-from typing import Optional
+from typing import Callable, Optional
 
 from bs4 import BeautifulSoup
 
@@ -393,7 +393,7 @@ def parse_otto(html: str, fallback_url: str) -> Optional[tuple]:
 # Registry
 # ---------------------------------------------------------------------------
 
-SHOP_PARSERS: dict[str, callable] = {
+SHOP_PARSERS: dict[str, Callable] = {
     "idealo":     parse_idealo,
     "amazon":     parse_amazon,
     "mediamarkt": parse_mediamarkt,

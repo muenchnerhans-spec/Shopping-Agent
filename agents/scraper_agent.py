@@ -97,8 +97,8 @@ class ScraperAgent:
 
         for shop_key in shops:
             result = self._scrape_one_shop(item_id, query, shop_key)
-            if result.ok():
-                if best is None or (result.price is not None and result.price < best.price):
+            if result.ok() and result.price is not None:
+                if best is None or best.price is None or result.price < best.price:
                     best = result
             else:
                 last_error = result.error
