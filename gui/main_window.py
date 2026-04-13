@@ -13,8 +13,21 @@ import sys
 import threading
 import tkinter as tk
 import webbrowser
+from datetime import datetime
 from tkinter import messagebox, ttk
 from typing import Optional
+
+try:
+    import matplotlib
+    matplotlib.use("TkAgg")
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    _MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    _MATPLOTLIB_AVAILABLE = False
+
+_CHART_COLOR = "#1f77b4"
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +180,18 @@ class MainWindow:
         self._combo_history_item = ttk.Combobox(top, state="readonly", width=30)
         self._combo_history_item.pack(side=tk.LEFT, padx=6)
         ttk.Button(top, text="Laden", command=self._on_load_history).pack(side=tk.LEFT)
+
+        # Chart area (matplotlib) or fallback label
+        if _MATPLOTLIB_AVAILABLE:
+            self._fig, self._ax = plt.subplots(figsize=(8, 3), tight_layout=True)
+            self._chart_canvas = FigureCanvasTkAgg(self._fig, master=frame)
+            self._chart_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=False, padx=8, pady=(0, 4))
+        else:
+            ttk.Label(
+                frame,
+                text="Diagramm nicht verfügbar – bitte matplotlib installieren.",
+                foreground="gray",
+            ).pack(padx=8, pady=4)
 
         cols = ("timestamp", "price", "url")
         self._tree_history = ttk.Treeview(
@@ -338,6 +363,7 @@ class MainWindow:
                     entry.get("url", ""),
                 ),
             )
+        self._update_price_chart(name, history)
 
     def _on_history_double_click(self, _event) -> None:
         sel = self._tree_history.selection()
@@ -346,6 +372,52 @@ class MainWindow:
         url = self._tree_history.item(sel[0], "values")[2]
         if url and url.startswith("http"):
             webbrowser.open(url)
+
+    def _update_price_chart(self, item_name: str, history: list[dict]) -> None:
+        """Redraw the embedded matplotlib price-history chart."""
+        if not _MATPLOTLIB_AVAILABLE:
+            return
+
+        self._ax.clear()
+
+        if not history:
+            self._ax.set_title(f"Preisverlauf: {item_name}")
+            self._ax.text(
+                0.5, 0.5, "Keine Daten vorhanden",
+                ha="center", va="center", transform=self._ax.transAxes, color="gray"
+            )
+            self._chart_canvas.draw()
+            return
+
+        dates = []
+        prices = []
+        for entry in history:
+            ts = entry.get("timestamp", "")
+            price = entry.get("price")
+            if ts and price is not None:
+                try:
+                    dates.append(datetime.fromisoformat(ts))
+                    prices.append(float(price))
+                except (ValueError, TypeError):
+                    continue
+
+        if not dates:
+            self._chart_canvas.draw()
+            return
+
+        self._ax.plot(dates, prices, marker="o", markersize=4, linewidth=1.5, color=_CHART_COLOR)
+        self._ax.fill_between(dates, prices, alpha=0.12, color=_CHART_COLOR)
+        self._ax.set_title(f"Preisverlauf: {item_name}", fontsize=10)
+        self._ax.set_ylabel("Preis (€)", fontsize=9)
+        self._ax.yaxis.set_major_formatter(
+            plt.FuncFormatter(lambda val, _: f"{val:.2f} €")
+        )
+        self._ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m.%Y"))
+        self._ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+        self._fig.autofmt_xdate(rotation=30, ha="right")
+        self._ax.grid(axis="y", linestyle="--", alpha=0.5)
+
+        self._chart_canvas.draw()
 
     def _on_clear_alerts(self) -> None:
         self._notifier.clear_log()

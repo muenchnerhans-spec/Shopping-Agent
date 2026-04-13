@@ -9,3 +9,6 @@ lxml>=5.0.0          # faster BS4 backend (optional but recommended)
 
 # Desktop notifications (optional – falls gracefully if missing)
 plyer>=2.1.0
+
+# Price-history chart
+matplotlib>=3.8.0
