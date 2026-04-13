@@ -13,7 +13,7 @@ import os
 from datetime import datetime
 from typing import Optional
 
-from config import WATCHLIST_FILE, PRICE_HISTORY_FILE, DATA_DIR
+from config import WATCHLIST_FILE, PRICE_HISTORY_FILE, SETTINGS_FILE, DATA_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,6 @@ class StorageAgent:
 
     def _save_history(self) -> None:
         self._write_json(PRICE_HISTORY_FILE, self._price_history)
-
     @staticmethod
     def _read_json(path: str, default) -> dict | list:
         if not os.path.exists(path):
@@ -169,6 +168,19 @@ class StorageAgent:
     def get_latest_snapshot(self, item_id: str) -> Optional[dict]:
         history = self._price_history.get(item_id, [])
         return history[-1] if history else None
+
+    # ------------------------------------------------------------------
+    # Settings API
+    # ------------------------------------------------------------------
+
+    def get_settings(self) -> dict:
+        """Return the persisted application settings (empty dict if none saved)."""
+        return dict(self._read_json(SETTINGS_FILE, default={}))
+
+    def save_settings(self, settings: dict) -> None:
+        """Persist application settings to disk."""
+        self._write_json(SETTINGS_FILE, settings)
+        logger.debug("Settings saved.")
 
     # ------------------------------------------------------------------
     # Utility

@@ -26,6 +26,17 @@ REQUEST_DELAY = 2.0   # seconds between requests (be polite)
 DATA_DIR = "data"
 WATCHLIST_FILE = "data/watchlist.json"
 PRICE_HISTORY_FILE = "data/price_history.json"
+SETTINGS_FILE = "data/settings.json"
 
 # Notification thresholds
 DEFAULT_PRICE_DROP_PERCENT = 5.0  # alert if price drops by this % or more
+
+# E-Mail notifications (defaults; overridden at runtime via settings file)
+EMAIL_ENABLED = False
+EMAIL_SMTP_HOST = ""
+EMAIL_SMTP_PORT = 587
+EMAIL_SMTP_USE_TLS = True
+EMAIL_USERNAME = ""
+EMAIL_PASSWORD = ""
+EMAIL_SENDER = ""
+EMAIL_RECIPIENT = ""

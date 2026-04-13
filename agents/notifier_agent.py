@@ -4,12 +4,16 @@ NotifierAgent – Evaluates price results and fires alerts.
 Responsibilities:
 - Compare new price against target_price and alert_on_drop_pct thresholds
 - Emit desktop notifications (via plyer) when thresholds are breached
+- Send e-mail notifications (via smtplib) when e-mail alerting is configured
 - Keep a callback registry so the GUI can subscribe to alerts
 - Log all alerts to a structured list for display in the GUI
 """
 
 import logging
+import smtplib
+import ssl
 from datetime import datetime
+from email.mime.text import MIMEText
 from typing import Callable, Optional
 
 from config import DEFAULT_PRICE_DROP_PERCENT
@@ -52,6 +56,42 @@ class NotifierAgent:
         self._alert_log: list[Alert] = []
         self._callbacks: list[Callable[[Alert], None]] = []
         self._desktop_available = self._check_desktop()
+
+        # E-mail configuration (set via configure_email)
+        self._email_enabled: bool = False
+        self._email_smtp_host: str = ""
+        self._email_smtp_port: int = 587
+        self._email_smtp_use_tls: bool = True
+        self._email_username: str = ""
+        self._email_password: str = ""
+        self._email_sender: str = ""
+        self._email_recipient: str = ""
+
+    # ------------------------------------------------------------------
+    # E-mail configuration
+    # ------------------------------------------------------------------
+
+    def configure_email(
+        self,
+        *,
+        enabled: bool,
+        smtp_host: str,
+        smtp_port: int,
+        use_tls: bool,
+        username: str,
+        password: str,
+        sender: str,
+        recipient: str,
+    ) -> None:
+        """Update e-mail settings at runtime (called from GUI settings)."""
+        self._email_enabled = enabled
+        self._email_smtp_host = smtp_host
+        self._email_smtp_port = smtp_port
+        self._email_smtp_use_tls = use_tls
+        self._email_username = username
+        self._email_password = password
+        self._email_sender = sender
+        self._email_recipient = recipient
 
     # ------------------------------------------------------------------
     # Subscription API (used by GUI)
@@ -168,8 +208,9 @@ class NotifierAgent:
         return alert
 
     def _dispatch(self, alert: Alert) -> None:
-        """Send desktop notification and call registered GUI callbacks."""
+        """Send desktop notification, e-mail, and call registered GUI callbacks."""
         self._desktop_notify(alert)
+        self._email_notify(alert)
         for cb in list(self._callbacks):
             try:
                 cb(alert)
@@ -191,6 +232,95 @@ class NotifierAgent:
         except Exception as exc:
             logger.debug("Desktop notification failed: %s", exc)
 
+    def _email_notify(self, alert: Alert) -> None:
+        """Send an e-mail alert via SMTP when e-mail alerting is enabled."""
+        if not self._email_enabled:
+            return
+        if not self._email_smtp_host or not self._email_recipient:
+            logger.warning("E-Mail alerting enabled but SMTP host or recipient is missing.")
+            return
+
+        old = f"{alert.old_price:.2f} €" if alert.old_price is not None else "–"
+        subject = f"Preisalarm: {alert.item_name} – {alert.new_price:.2f} €"
+        body = (
+            f"Preisalarm für: {alert.item_name}\n\n"
+            f"Alter Preis : {old}\n"
+            f"Neuer Preis : {alert.new_price:.2f} €\n"
+            f"Grund       : {alert.reason}\n"
+            f"Zeitpunkt   : {alert.timestamp[:16]}\n"
+            f"URL         : {alert.url}\n"
+        )
+        sender = self._email_sender or self._email_username
+        try:
+            self._smtp_send(
+                self._email_smtp_host,
+                self._email_smtp_port,
+                self._email_smtp_use_tls,
+                self._email_username,
+                self._email_password,
+                sender,
+                self._email_recipient,
+                subject,
+                body,
+            )
+            logger.info("E-Mail alert sent to %s for '%s'.", self._email_recipient, alert.item_name)
+        except Exception as exc:
+            logger.error("Failed to send e-mail alert: %s", exc)
+
+    def send_test_email(self) -> None:
+        """
+        Send a test e-mail using the current configuration.
+
+        Raises an exception on failure so callers can display an error message.
+        """
+        if not self._email_smtp_host or not self._email_recipient:
+            raise ValueError("SMTP Host und Empfänger müssen konfiguriert sein.")
+        sender = self._email_sender or self._email_username
+        subject = "Idealo Price Tracker – Test-E-Mail"
+        body = "Dies ist eine Test-E-Mail vom Idealo Price Tracker."
+        self._smtp_send(
+            self._email_smtp_host,
+            self._email_smtp_port,
+            self._email_smtp_use_tls,
+            self._email_username,
+            self._email_password,
+            sender,
+            self._email_recipient,
+            subject,
+            body,
+        )
+
+    @staticmethod
+    def _smtp_send(
+        host: str,
+        port: int,
+        use_tls: bool,
+        username: str,
+        password: str,
+        sender: str,
+        recipient: str,
+        subject: str,
+        body: str,
+    ) -> None:
+        """Build and deliver one e-mail via SMTP."""
+        msg = MIMEText(body, "plain", "utf-8")
+        msg["Subject"] = subject
+        msg["From"] = sender
+        msg["To"] = recipient
+
+        if use_tls:
+            context = ssl.create_default_context()
+            with smtplib.SMTP(host, port, timeout=15) as smtp:
+                smtp.starttls(context=context)
+                if username:
+                    smtp.login(username, password)
+                smtp.sendmail(sender, recipient, msg.as_string())
+        else:
+            with smtplib.SMTP(host, port, timeout=15) as smtp:
+                if username:
+                    smtp.login(username, password)
+                smtp.sendmail(sender, recipient, msg.as_string())
+
     @staticmethod
     def _check_desktop() -> bool:
         try:
@@ -199,3 +329,4 @@ class NotifierAgent:
         except ImportError:
             logger.debug("plyer not installed – desktop notifications disabled.")
             return False
+

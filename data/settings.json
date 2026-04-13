@@ -1,0 +1,5 @@
+{
+  "email_enabled": true,
+  "email_smtp_host": "smtp.gmail.com",
+  "email_smtp_port": 587
+}
